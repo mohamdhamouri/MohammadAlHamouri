@@ -24,6 +24,13 @@ jobs:
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "Project: $PROJECT_DIR"
 
+      - name: Fix Kotlin plugin for AGP 9
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          find . -type f \( -name "build.gradle.kts" -o -name "build.gradle" \) -print0 | while IFS= read -r -d '' file; do
+            sed -i '/org\.jetbrains\.kotlin\.android/d' "$file"
+          done
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
