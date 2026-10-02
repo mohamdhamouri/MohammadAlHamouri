@@ -51,6 +51,13 @@ jobs:
         run: |
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
+      - name: Show MainActivity source
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          echo "===== MainActivity.kt lines 100-165 ====="
+          nl -ba app/src/main/java/com/mohamd/hamouri/MainActivity.kt | sed -n '100,165p'
+          echo "===== END SOURCE ====="
+
       - name: Build APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
