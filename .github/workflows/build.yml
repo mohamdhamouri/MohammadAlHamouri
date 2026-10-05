@@ -8,89 +8,222 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
+      # 1. تحميل ملفات المستودع
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract Core ZIP
+
+      # 2. البحث عن ملف Core ZIP وفك الضغط
+      - name: Find and extract Core ZIP
         run: |
-          echo "Files in repository:"
-          ls -la
+          echo "======================================"
+          echo "Searching for Core ZIP..."
+          echo "======================================"
 
-          ZIP_FILE="core102.zip"
+          echo "Repository files:"
+          find . -maxdepth 3 -type f -print
 
-          if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: core102.zip not found"
+          ZIP_FILE=$(find . -maxdepth 2 -type f -name "core102.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: core102.zip was not found!"
             exit 1
           fi
+
+          echo "Found ZIP:"
+          echo "$ZIP_FILE"
 
           mkdir -p extracted
+
           unzip -q "$ZIP_FILE" -d extracted
 
-          echo "ZIP extracted."
-          find extracted -maxdepth 4 -type f | head -100
+          echo "======================================"
+          echo "ZIP extracted successfully"
+          echo "======================================"
 
+          echo "Extracted files:"
+          find extracted -maxdepth 5 -type f -print | head -200
+
+
+      # 3. العثور على مشروع Android
       - name: Locate Android project
         run: |
-          SETTINGS=$(find extracted -type f -name "settings.gradle.kts" -o -name "settings.gradle" | head -n 1)
+          echo "======================================"
+          echo "Searching for settings.gradle..."
+          echo "======================================"
 
-          if [ -z "$SETTINGS" ]; then
-            echo "ERROR: Android project not found"
-            find extracted -maxdepth 6 -type f | head -200
+          SETTINGS_FILE=$(find extracted \
+            -type f \
+            \( -name "settings.gradle.kts" -o -name "settings.gradle" \) \
+            | head -n 1)
+
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "ERROR: Android project was not found!"
+
+            echo "Files inside extracted:"
+            find extracted -maxdepth 8 -type f -print | head -300
+
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$SETTINGS")
+          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
 
-          echo "Found project:"
+          echo "Settings file:"
+          echo "$SETTINGS_FILE"
+
+          echo "Android project directory:"
           echo "$PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
+
+      # 4. إعداد Java 17
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle
+
+      # 5. إعداد Gradle الصحيح
+      - name: Set up Gradle 9.6.0
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '9.6'
+          gradle-version: '9.6.0'
 
+
+      # 6. إعداد Android SDK
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+
+      # 7. تثبيت Android SDK
       - name: Install Android SDK
         run: |
-          sdkmanager "platform-tools" "platforms;android-37" "build-tools;35.0.0"
+          echo "Installing Android SDK..."
 
+          yes | sdkmanager --licenses || true
+
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-37" \
+            "build-tools;36.0.0"
+
+          echo "Android SDK installed successfully."
+
+
+      # 8. التحقق من مشروع Core
+      - name: Verify Core project
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          echo "======================================"
+          echo "Core project:"
+          echo "======================================"
+
+          pwd
+
+          echo "Project files:"
+          find . -maxdepth 3 -type f -print | head -200
+
+          echo "======================================"
+          echo "Checking Gradle files..."
+          echo "======================================"
+
+          ls -la
+
+          if [ ! -f "settings.gradle.kts" ] && [ ! -f "settings.gradle" ]; then
+            echo "WARNING: settings.gradle file not found in project root."
+          fi
+
+
+      # 9. بناء Core APK
       - name: Build Core APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          chmod +x gradlew 2>/dev/null || true
-          gradle :core:assembleDebug --no-daemon --stacktrace
+          echo "======================================"
+          echo "Building Mohammad Al Hamouri Core..."
+          echo "======================================"
 
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+
+            echo "Using Gradle Wrapper"
+
+            ./gradlew :core:assembleDebug \
+              --no-daemon \
+              --stacktrace
+          else
+            echo "Gradle wrapper not found."
+            echo "Using installed Gradle 9.6.0"
+
+            gradle :core:assembleDebug \
+              --no-daemon \
+              --stacktrace
+          fi
+
+
+      # 10. البحث عن APK الناتج
       - name: Find generated APK
         run: |
+          echo "======================================"
           echo "Searching for generated APK..."
-          find extracted -type f -name "*.apk" -print
+          echo "======================================"
 
-      - name: Prepare APK
-        run: |
-          APK=$(find extracted -type f -path "*/core/build/outputs/apk/debug/*.apk" | head -n 1)
+          find extracted \
+            -type f \
+            -name "*.apk" \
+            -print
+
+          echo "======================================"
+
+          APK=$(find extracted \
+            -type f \
+            -path "*/core/build/outputs/apk/debug/*.apk" \
+            | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "ERROR: Core APK was not found"
-            echo "All APK files:"
-            find extracted -type f -name "*.apk" -print
+            echo "Core-specific path was not found."
+
+            echo "Trying general APK search..."
+
+            APK=$(find extracted \
+              -type f \
+              -name "*.apk" \
+              | head -n 1)
+          fi
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: NO APK WAS GENERATED!"
             exit 1
           fi
 
-          echo "Found APK:"
+          echo "======================================"
+          echo "APK FOUND:"
           echo "$APK"
+          echo "======================================"
+
+          echo "APK=$APK" >> "$GITHUB_ENV"
+
+
+      # 11. تجهيز APK للرفع
+      - name: Prepare APK
+        run: |
+          echo "Preparing APK..."
+
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: APK file does not exist:"
+            echo "$APK"
+            exit 1
+          fi
 
           cp "$APK" MohammadAlHamouri-Core.apk
 
+          echo "Final APK:"
+          ls -lh MohammadAlHamouri-Core.apk
+
+
+      # 12. رفع APK كـ Artifact
       - name: Upload Core APK
         uses: actions/upload-artifact@v4
         with:
