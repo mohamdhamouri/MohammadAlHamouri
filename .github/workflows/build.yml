@@ -1,16 +1,18 @@
-name: Build محمد الحموري Core
+name: Build محمد الحموري 3.0.1
 
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
+    branches:
+      - main
+      - master
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Java 17
@@ -19,47 +21,106 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Gradle 9.6.0
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "9.6.0"
-
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
-          packages: ''
+          packages: ""
 
-      - name: Install Android SDK
+      - name: Install Android SDK packages
         run: |
           sdkmanager "platform-tools"
           sdkmanager "platforms;android-36"
           sdkmanager "build-tools;36.0.0"
 
-      - name: Extract Core project
+      - name: Find and extract project ZIP
+        shell: bash
         run: |
-          mkdir extracted
-          unzip -q core103.zip -d extracted
-          echo "=== Extracted files ==="
-          find extracted -maxdepth 3 -type f | head -100
+          set -e
 
-      - name: Build Core APK
-        working-directory: extracted
+          mkdir -p extracted
+
+          ZIP_FILE=""
+
+          for f in *.zip; do
+            if [ -f "$f" ]; then
+              echo "Checking ZIP: $f"
+
+              if unzip -l "$f" | grep -q "settings.gradle.kts"; then
+                ZIP_FILE="$f"
+                break
+              fi
+            fi
+          done
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: لم يتم العثور على ZIP يحتوي على settings.gradle.kts"
+            echo "ZIP files الموجودة:"
+            ls -la *.zip 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "Using project ZIP: $ZIP_FILE"
+
+          unzip -q "$ZIP_FILE" -d extracted
+
+          PROJECT_DIR="$(find extracted -type f \
+            -name "settings.gradle.kts" \
+            -not -path "*/.gradle/*" \
+            -print -quit | xargs -r dirname)"
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: لم يتم العثور على مجلد المشروع"
+            find extracted -maxdepth 4 -type f | head -100
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+          echo "Project directory:"
+          echo "$PROJECT_DIR"
+
+          echo "Project files:"
+          ls -la "$PROJECT_DIR"
+
+      - name: Build محمد الحموري APK
         run: |
-          gradle :core:assembleDebug --no-daemon --stacktrace
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          echo "Building project..."
+          gradle :app:assembleDebug --no-daemon --stacktrace
 
       - name: Find generated APK
-        working-directory: extracted
         run: |
-          set -euxo pipefail
-          find . -type f -name "*.apk" -print
-          APK="$(find core/build/outputs/apk -type f -name "*.apk" | head -n 1)"
-          test -n "$APK"
-          cp "$APK" ../MohammadAlHamouri-Core.apk
+          set -e
 
-      - name: Upload Core APK
+          echo "Searching for APK..."
+
+          find "$PROJECT_DIR/app/build/outputs/apk" \
+            -type f \
+            -name "*.apk" \
+            -print
+
+          APK="$(find "$PROJECT_DIR/app/build/outputs/apk" \
+            -type f \
+            -name "*.apk" \
+            -print -quit)"
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK was not generated"
+            exit 1
+          fi
+
+          echo "APK found:"
+          echo "$APK"
+
+          cp "$APK" "MohammadAlHamouri-3.0.1-debug.apk"
+
+      - name: Upload محمد الحموري APK
         uses: actions/upload-artifact@v4
         with:
-          name: MohammadAlHamouri-Core-APK
-          path: MohammadAlHamouri-Core.apk
+          name: MohammadAlHamouri-3.0.1-APK
+          path: MohammadAlHamouri-3.0.1-debug.apk
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
