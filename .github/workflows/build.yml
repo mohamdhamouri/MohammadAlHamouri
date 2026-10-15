@@ -28,6 +28,8 @@ jobs:
           set -o pipefail
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
 
-      - name: Print SHA-1 Fingerprint
+      - name: Generate Keystore and Print SHA-1
         run: |
+          mkdir -p ~/.android
+          keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android
