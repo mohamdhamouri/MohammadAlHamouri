@@ -46,7 +46,7 @@ jobs:
       # 6. العثور على ملف المشروع وفك ضغطه
       - name: Extract Android project
         run: |
-          ZIP_FILE="MohammadAlHamouri-v3.6.1-integrated-source.zip"
+          ZIP_FILE="MohammadAlHamouri-v3.6.1-sdk36-build-fixed.zip"
 
           if [ ! -f "$ZIP_FILE" ]; then
             echo "ERROR: Source ZIP not found: $ZIP_FILE"
