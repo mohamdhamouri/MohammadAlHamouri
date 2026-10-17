@@ -19,7 +19,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. إعداد Java
+      # 2. إعداد Java 17
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -43,13 +43,14 @@ jobs:
           echo "Available Android platforms:"
           sdkmanager --list | grep -E 'platforms;android-[0-9]+' || true
 
-      # 6. العثور على ملف المشروع وفك ضغطه
+      # 6. فك ضغط ملف المشروع
       - name: Extract Android project
         run: |
           ZIP_FILE="MohammadAlHamouri-v3.6.1-sdk36-build-fixed.zip"
 
           if [ ! -f "$ZIP_FILE" ]; then
             echo "ERROR: Source ZIP not found: $ZIP_FILE"
+            echo "Files available in repository:"
             ls -la
             exit 1
           fi
@@ -73,13 +74,13 @@ jobs:
           echo "Project directory: $PROJECT_DIR"
           ls -la "$PROJECT_DIR"
 
-      # 7. إعداد Gradle
+      # 7. إعداد Gradle بالإصدار المطلوب
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.13"
+          gradle-version: "9.6.0"
 
-      # 8. التحقق من إعدادات المشروع
+      # 8. التحقق من ملفات المشروع
       - name: Check Gradle files
         run: |
           echo "Project directory: $PROJECT_DIR"
@@ -114,9 +115,10 @@ jobs:
             exit 1
           fi
 
+          echo "APK generated successfully:"
           ls -lh "$APK_PATH"
 
-      # 11. رفع ملف APK
+      # 11. رفع ملف APK إلى GitHub Actions
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
