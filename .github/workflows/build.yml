@@ -15,36 +15,41 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. تنزيل ملفات المستودع
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. إعداد Java
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
+      # 3. إعداد Android SDK
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
+      # 4. قبول تراخيص Android SDK
       - name: Accept Android SDK licenses
         run: |
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
 
+      # 5. تثبيت أدوات Android SDK
       - name: Install Android SDK packages
         run: |
-          sdkmanager \
-            "platform-tools" \
-            "platforms;android-37" \
-            "build-tools;36.0.0"
+          sdkmanager "platform-tools" "build-tools;36.0.0"
 
+          echo "Available Android platforms:"
+          sdkmanager --list | grep -E 'platforms;android-[0-9]+' || true
+
+      # 6. العثور على ملف المشروع وفك ضغطه
       - name: Extract Android project
         run: |
           ZIP_FILE="MohammadAlHamouri-v3.6.1-integrated-source.zip"
 
           if [ ! -f "$ZIP_FILE" ]; then
             echo "ERROR: Source ZIP not found: $ZIP_FILE"
-            echo "Files available in repository:"
             ls -la
             exit 1
           fi
@@ -52,56 +57,70 @@ jobs:
           mkdir -p android-project
           unzip -q "$ZIP_FILE" -d android-project
 
-          if [ ! -f "android-project/settings.gradle.kts" ]; then
-            echo "ERROR: settings.gradle.kts not found after extraction."
-            find android-project -maxdepth 4 -type f | head -100
+          SETTINGS_FILE="$(find android-project -type f \
+            \( -name settings.gradle.kts -o -name settings.gradle \) \
+            -print -quit)"
+
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "ERROR: Gradle settings file not found."
+            find android-project -maxdepth 5 -type f | head -100
             exit 1
           fi
 
-          echo "Project extracted successfully."
-          ls -la android-project
+          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Prepare Gradle project
-        working-directory: android-project
-        run: |
-          if [ ! -f "build.gradle.kts" ] &&
-             [ ! -f "build.gradle" ]; then
-            echo "ERROR: Root Gradle build file is missing."
-            echo "A compatible root build.gradle.kts must be added."
-            exit 1
-          fi
+          echo "Project directory: $PROJECT_DIR"
+          ls -la "$PROJECT_DIR"
 
-          if [ ! -f "gradlew" ]; then
-            echo "Gradle wrapper is not present."
-            echo "The next step will use installed Gradle if available."
-          fi
-
+      # 7. إعداد Gradle
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
 
-      - name: Build debug APK
-        working-directory: android-project
+      # 8. التحقق من إعدادات المشروع
+      - name: Check Gradle files
         run: |
+          echo "Project directory: $PROJECT_DIR"
+
+          if [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ] &&
+             [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
+            echo "ERROR: App Gradle file not found."
+            exit 1
+          fi
+
+          if [ ! -f "$PROJECT_DIR/build.gradle.kts" ] &&
+             [ ! -f "$PROJECT_DIR/build.gradle" ]; then
+            echo "ERROR: Root Gradle build file not found."
+            exit 1
+          fi
+
+      # 9. بناء التطبيق
+      - name: Build debug APK
+        run: |
+          cd "$PROJECT_DIR"
           gradle :app:assembleDebug --no-daemon --stacktrace
 
+      # 10. التحقق من إنشاء APK
       - name: Verify APK
         run: |
-          APK_PATH="android-project/app/build/outputs/apk/debug/app-debug.apk"
+          APK_PATH="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
 
           if [ ! -f "$APK_PATH" ]; then
             echo "ERROR: APK was not generated."
-            find android-project/app/build/outputs -type f 2>/dev/null || true
+            find "$PROJECT_DIR/app/build/outputs" \
+              -type f -name "*.apk" 2>/dev/null || true
             exit 1
           fi
 
           ls -lh "$APK_PATH"
 
+      # 11. رفع ملف APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: MohammadAlHamouri-v3.6.1-APK
-          path: android-project/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
