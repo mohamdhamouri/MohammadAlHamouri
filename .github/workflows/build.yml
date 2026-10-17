@@ -1,10 +1,10 @@
-
-name: Build Mohammad Al Hamouri 3.6.1 SDK 36
+name: Build Mohammad Al Hamouri 3.6.1
 
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -13,6 +13,7 @@ jobs:
   build:
     name: Build Android APK
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -21,50 +22,82 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
+        uses: android-actions/setup-android@v3
 
       - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses >/dev/null 2>&1 || true
-
-      - name: Install Android SDK 36
-        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
-
-      - name: Extract source archive
         run: |
-          ZIP_FILE="MohammadAlHamouri-v3.6.1-sdk36-build-fixed.zip"
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
+
+      - name: Extract Android project
+        run: |
+          ZIP_FILE="MohammadAlHamouri-v3.6.1-sdk36-compatible-source.zip"
+
           if [ ! -f "$ZIP_FILE" ]; then
             echo "ERROR: Source archive not found: $ZIP_FILE"
             ls -la
             exit 1
           fi
-          mkdir -p build-source
-          unzip -q "$ZIP_FILE" -d build-source
-          test -f build-source/settings.gradle.kts
-          test -f build-source/build.gradle.kts
-          test -f build-source/app/build.gradle.kts
+
+          mkdir -p android-project
+          unzip -q "$ZIP_FILE" -d android-project
+
+          echo "Extracted project files:"
+          find android-project -maxdepth 3 -type f | head -80
+
+      - name: Locate Gradle project
+        run: |
+          PROJECT_DIR="$(find android-project -name settings.gradle.kts -o -name settings.gradle | head -1)"
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: Gradle settings file not found in archive."
+            find android-project -maxdepth 5 -type f | head -150
+            exit 1
+          fi
+
+          PROJECT_DIR="$(dirname "$PROJECT_DIR")"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Gradle project directory: $PROJECT_DIR"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '9.6.0'
 
       - name: Build debug APK
-        working-directory: build-source
-        run: gradle :app:assembleDebug --no-daemon --stacktrace
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          if [ -f ./gradlew ]; then
+            chmod +x ./gradlew
+            ./gradlew assembleDebug --no-daemon
+          else
+            gradle assembleDebug --no-daemon
+          fi
 
       - name: Verify APK
         run: |
-          APK="build-source/app/build/outputs/apk/debug/app-debug.apk"
-          test -f "$APK" || { echo "ERROR: APK was not generated"; find build-source/app/build/outputs -type f 2>/dev/null || true; exit 1; }
-          ls -lh "$APK"
+          APK="$(find "$PROJECT_DIR" -type f -path '*/build/outputs/apk/debug/*.apk' | head -1)"
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK was not generated."
+            exit 1
+          fi
+
+          echo "APK generated successfully: $APK"
+          mkdir -p output
+          cp "$APK" output/MohammadAlHamouri-v3.6.1-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MohammadAlHamouri-v3.6.1-APK
-          path: build-source/app/build/outputs/apk/debug/app-debug.apk
+          name: MohammadAlHamouri-v3.6.1-debug-APK
+          path: output/MohammadAlHamouri-v3.6.1-debug.apk
           if-no-files-found: error
           retention-days: 7
