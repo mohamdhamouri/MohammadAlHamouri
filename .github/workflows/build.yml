@@ -27,7 +27,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: ""
+          packages: "platform-tools"
 
       - name: Accept Android SDK licenses
         run: |
@@ -37,12 +37,8 @@ jobs:
         run: |
           sdkmanager --install \
             "platform-tools" \
-            "platforms;android-37" \
+            "platforms;android-36" \
             "build-tools;36.0.0"
-
-      - name: Verify Android SDK
-        run: |
-          sdkmanager --list_installed
 
       - name: Extract Android project
         run: |
@@ -61,29 +57,25 @@ jobs:
           find android-project -maxdepth 4 -type f | head -100
 
       - name: Locate Gradle project
-        shell: bash
         run: |
-          SETTINGS_FILE="$(find android-project -type f \
+          PROJECT_SETTINGS="$(find android-project \
             \( -name settings.gradle.kts -o -name settings.gradle \) \
-            -print -quit)"
+            -type f -print -quit)"
 
-          if [ -z "$SETTINGS_FILE" ]; then
-            echo "ERROR: Gradle settings file not found."
-            find android-project -maxdepth 6 -type f | head -200
+          if [ -z "$PROJECT_SETTINGS" ]; then
+            echo "ERROR: Gradle settings file not found in source archive."
+            find android-project -maxdepth 5 -type f | head -150
             exit 1
           fi
 
-          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
-
-          if [ ! -f "$PROJECT_DIR/build.gradle.kts" ] && \
-             [ ! -f "$PROJECT_DIR/build.gradle" ]; then
-            echo "ERROR: Root Gradle build file not found."
-            ls -la "$PROJECT_DIR"
-            exit 1
-          fi
-
+          PROJECT_DIR="$(dirname "$PROJECT_SETTINGS")"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "Gradle project directory: $PROJECT_DIR"
+
+      - name: Check Gradle wrapper
+        working-directory: android-project
+        run: |
+          find . -type f -name gradle-wrapper.properties -print
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -93,15 +85,15 @@ jobs:
         run: |
           if [ -f ./gradlew ]; then
             chmod +x ./gradlew
-            ./gradlew assembleDebug --no-daemon --stacktrace
+            ./gradlew assembleDebug --no-daemon
           else
-            gradle assembleDebug --no-daemon --stacktrace
+            gradle assembleDebug --no-daemon
           fi
 
-      - name: Verify and prepare APK
-        shell: bash
+      - name: Verify APK
         run: |
-          APK="$(find "$PROJECT_DIR" -type f \
+          APK="$(find "$PROJECT_DIR" \
+            -type f \
             -path '*/build/outputs/apk/debug/*.apk' \
             -print -quit)"
 
@@ -110,9 +102,12 @@ jobs:
             exit 1
           fi
 
+          echo "APK generated successfully: $APK"
+
           mkdir -p output
           cp "$APK" output/MohammadAlHamouri-v3.6.1-debug.apk
-          ls -lh output/
+
+          ls -lh output/MohammadAlHamouri-v3.6.1-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
