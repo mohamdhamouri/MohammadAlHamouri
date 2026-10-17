@@ -29,13 +29,13 @@ jobs:
 
       - name: Accept Android SDK licenses
         run: |
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
 
       - name: Install Android SDK packages
         run: |
           sdkmanager \
             "platform-tools" \
-            "platforms;android-36" \
+            "platforms;android-37" \
             "build-tools;36.0.0"
 
       - name: Extract Android project
@@ -51,20 +51,31 @@ jobs:
           mkdir -p android-project
           unzip -q "$ZIP_FILE" -d android-project
 
-          echo "Extracted project files:"
-          find android-project -maxdepth 3 -type f | head -80
+          echo "Extracted files:"
+          find android-project -maxdepth 4 -type f | head -100
 
       - name: Locate Gradle project
+        shell: bash
         run: |
-          PROJECT_DIR="$(find android-project -name settings.gradle.kts -o -name settings.gradle | head -1)"
+          SETTINGS_FILE="$(find android-project -type f \
+            \( -name settings.gradle.kts -o -name settings.gradle \) \
+            -print -quit)"
 
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: Gradle settings file not found in archive."
-            find android-project -maxdepth 5 -type f | head -150
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "ERROR: Gradle settings file not found."
+            find android-project -maxdepth 6 -type f | head -200
             exit 1
           fi
 
-          PROJECT_DIR="$(dirname "$PROJECT_DIR")"
+          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
+
+          if [ ! -f "$PROJECT_DIR/build.gradle.kts" ] && \
+             [ ! -f "$PROJECT_DIR/build.gradle" ]; then
+            echo "ERROR: Root Gradle build file not found in $PROJECT_DIR"
+            ls -la "$PROJECT_DIR"
+            exit 1
+          fi
+
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "Gradle project directory: $PROJECT_DIR"
 
@@ -76,23 +87,29 @@ jobs:
         run: |
           if [ -f ./gradlew ]; then
             chmod +x ./gradlew
-            ./gradlew assembleDebug --no-daemon
+            ./gradlew assembleDebug --no-daemon --stacktrace
           else
-            gradle assembleDebug --no-daemon
+            gradle assembleDebug --no-daemon --stacktrace
           fi
 
-      - name: Verify APK
+      - name: Verify and prepare APK
+        shell: bash
         run: |
-          APK="$(find "$PROJECT_DIR" -type f -path '*/build/outputs/apk/debug/*.apk' | head -1)"
+          APK="$(find "$PROJECT_DIR" -type f \
+            -path '*/build/outputs/apk/debug/*.apk' \
+            -print -quit)"
 
           if [ -z "$APK" ]; then
             echo "ERROR: APK was not generated."
+            find "$PROJECT_DIR" -type d -path '*/build/outputs/*' -print
             exit 1
           fi
 
-          echo "APK generated successfully: $APK"
           mkdir -p output
           cp "$APK" output/MohammadAlHamouri-v3.6.1-debug.apk
+
+          echo "APK ready: output/MohammadAlHamouri-v3.6.1-debug.apk"
+          ls -lh output/
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
